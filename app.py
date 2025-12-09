@@ -63,6 +63,11 @@ def format_poem(text: str) -> str:
 def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+# Optional GET route for testing
+@app.get("/generate")
+def generate_poetry_get():
+    return {"message": "Send a POST request to /generate with JSON { 'text': 'your prompt' }"}
+
 @app.post("/generate")
 def generate_poetry(prompt: Prompt):
     global tokenizer, generator
@@ -75,7 +80,6 @@ def generate_poetry(prompt: Prompt):
     # --------------------------
     if tokenizer is None or generator is None:
         with model_lock:
-            # Check again to prevent race condition
             if tokenizer is None or generator is None:
                 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
                 import torch
@@ -83,14 +87,14 @@ def generate_poetry(prompt: Prompt):
                 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
                 model = AutoModelForCausalLM.from_pretrained(
                     MODEL_NAME,
-                    device_map=None,       # CPU-only for low-memory environments
-                    torch_dtype=torch.float32
+                    device_map=None,  # CPU-only for low-memory environments
+                    dtype=torch.float32  # fixed deprecation warning
                 )
                 generator = pipeline(
                     "text-generation",
                     model=model,
                     tokenizer=tokenizer,
-                    device=-1              # CPU
+                    device=-1  # CPU
                 )
 
     # --------------------------
