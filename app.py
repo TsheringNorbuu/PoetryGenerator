@@ -2,10 +2,9 @@ from fastapi import FastAPI, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
-import torch
 import re
 import os
+import threading
 
 # ==========================
 # APP SETUP
@@ -16,23 +15,12 @@ templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ==========================
-# LOAD HUGGING FACE MODEL
+# MODEL PLACEHOLDERS
 # ==========================
 MODEL_NAME = "Tshering6/poetry-model"
-
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    device_map="auto",      # automatically chooses GPU/CPU
-    load_in_8bit=True       # reduces memory usage drastically
-)
-
-generator = pipeline(
-    "text-generation",
-    model=model,
-    tokenizer=tokenizer,
-    device_map="auto"
-)
+tokenizer = None
+generator = None
+model_lock = threading.Lock()  # ensures only one thread loads the model
 
 # ==========================
 # REQUEST SCHEMA
@@ -44,9 +32,6 @@ class Prompt(BaseModel):
 # POEM FORMATTER
 # ==========================
 def format_poem(text: str) -> str:
-    """
-    Convert raw model output into clean free-verse poetry.
-    """
     if not text:
         return ""
 
@@ -69,9 +54,7 @@ def format_poem(text: str) -> str:
     if current_line:
         lines.append(" ".join(current_line))
 
-    # Build poem without stanza breaks
-    poem = "\n".join(lines)
-    return poem
+    return "\n".join(lines)
 
 # ==========================
 # ROUTES
@@ -82,9 +65,37 @@ def home(request: Request):
 
 @app.post("/generate")
 def generate_poetry(prompt: Prompt):
+    global tokenizer, generator
+
     if not prompt.text.strip():
         return {"poem": "Please enter a prompt to generate a poem."}
 
+    # --------------------------
+    # Lazy load the model (thread-safe)
+    # --------------------------
+    if tokenizer is None or generator is None:
+        with model_lock:
+            # Check again to prevent race condition
+            if tokenizer is None or generator is None:
+                from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+                import torch
+
+                tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+                model = AutoModelForCausalLM.from_pretrained(
+                    MODEL_NAME,
+                    device_map=None,       # CPU-only for low-memory environments
+                    torch_dtype=torch.float32
+                )
+                generator = pipeline(
+                    "text-generation",
+                    model=model,
+                    tokenizer=tokenizer,
+                    device=-1              # CPU
+                )
+
+    # --------------------------
+    # Generate poetry
+    # --------------------------
     clean_prompt = (
         "Write a joyful poem with fresh imagery and short poetic lines.\n\n"
         f"Theme: {prompt.text}\n\nPoem:\n"
@@ -109,7 +120,7 @@ def generate_poetry(prompt: Prompt):
     return {"poem": poem}
 
 # ==========================
-# RUN ON RENDER
+# RUN LOCALLY
 # ==========================
 if __name__ == "__main__":
     import uvicorn
