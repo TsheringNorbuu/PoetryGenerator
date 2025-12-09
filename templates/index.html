@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Poetry Generator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="container">
+    <h1>AI Poetry Generator</h1>
+
+    <textarea id="prompt" placeholder="Enter a theme, first line, or mood..."></textarea>
+    <br>
+
+    <button id="generate-btn" onclick="generatePoem()">Generate Poem</button>
+
+    <!-- Loader -->
+    <div id="loading-container">
+        <div id="loading-text">Writing your poem…</div>
+        <div id="loading-bar"></div>
+    </div>
+
+    <!-- Poem output -->
+    <pre id="output" class="fade-in"></pre>
+</div>
+
+<script>
+// Typewriter effect for poem display with prompt validation
+async function generatePoem() {
+    const prompt = document.getElementById("prompt").value.trim();
+    const outputEl = document.getElementById("output");
+    const loader = document.getElementById("loading-container");
+    const btn = document.getElementById("generate-btn");
+
+    // Validation: require a prompt
+    if (!prompt) {
+        alert("Please enter a theme, first line, or mood before generating a poem.");
+        return;
+    }
+
+    outputEl.innerText = "";
+    loader.style.display = "block";
+    btn.disabled = true;
+
+    try {
+        const response = await fetch("/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: prompt })
+        });
+
+        const data = await response.json();
+        const poem = data.poem.split("\n");
+
+        // Animate line by line
+        loader.style.display = "none";
+        outputEl.innerText = "";
+        for (let line of poem) {
+            await new Promise(r => setTimeout(r, 150)); // typing delay
+            outputEl.innerText += line + "\n";
+        }
+
+    } catch (err) {
+        outputEl.innerText = "Oops! Something went wrong. Try again.";
+        loader.style.display = "none";
+    } finally {
+        btn.disabled = false;
+    }
+}
+</script>
+
+</script>
+
+</body>
+</html>
